@@ -18,8 +18,7 @@ query.onSnapshot(querySnapshot => {
             if (change.type === 'added') {
                 for (const [key, value] of Object.entries(change.doc.data())) {
                     devices.push(key);
-                    let cronStr = `*/${value} * * * *`;
-                    let job = cron.schedule(cronStr, () => {
+                    let job = cron.schedule(value, () => {
                         triggerRead(key, 1);
                     });
                     job.start();
@@ -28,13 +27,15 @@ query.onSnapshot(querySnapshot => {
                 console.log('devices: ', devices);
             }
             if (change.type === 'modified') {
-                let job = cronJobs[key];
-                job.stop();
-                job = cron.schedule(cronStr, () => {
-                    triggerRead(key, 1);
-                });
-                job.start();
-                cronJobs[key] = job;
+                for (const [key, value] of Object.entries(change.doc.data())) {
+                    let job = cronJobs[key];
+                    job.stop();
+                    job = cron.schedule(value, () => {
+                        triggerRead(key, 1);
+                    });
+                    job.start();
+                    cronJobs[key] = job;
+                }
             }
         }
     })
