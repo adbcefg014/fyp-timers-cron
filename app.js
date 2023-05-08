@@ -9,7 +9,7 @@ const db = getFirestore();
 console.log("Firebase authenticated!");
 
 /* SETTING UP FOR REGULAR INTERVAL READS */
-let cronJobs = [];
+let regularCronJobs = [];
 const query = db.collection('commands');
 query.onSnapshot(querySnapshot => {
     querySnapshot.docChanges().forEach(change => {
@@ -21,22 +21,22 @@ query.onSnapshot(querySnapshot => {
                             triggerRead(key, 1);
                         });
                         job.start();
-                        cronJobs[key] = job;
-                        console.log("Added cron for", key, " : ", value);
+                        regularCronJobs[key] = job;
+                        console.log("Added regular cron for", key, " : ", value);
                     }
                 }
             }
             if (change.type === 'modified') {
                 for (const [key, value] of Object.entries(change.doc.data())) {
                     if (cron.validate(value) === true) {
-                        let job = cronJobs[key];
+                        let job = regularCronJobs[key];
                         job.stop();
                         job = cron.schedule(value, () => {
                             triggerRead(key, 1);
                         });
                         job.start();
-                        cronJobs[key] = job;
-                        console.log("Updated cron for", key, " : ", value);
+                        regularCronJobs[key] = job;
+                        console.log("Updated regular cron for", key, " : ", value);
                     }
                 }
             }
@@ -47,22 +47,32 @@ query.onSnapshot(querySnapshot => {
 
 /* CONTINUOUS READS */
 let continuousRead;
+let continuousCronJobs = [];
 let notFirstInit = false;
 const continuousDoc = query.doc('Legend');
 continuousDoc.onSnapshot(docSnapshot => {
     let docData = docSnapshot.data();
     continuousRead = docData['continuousRead'];
     if (continuousRead === true) {
-        for (const [key, value] of Object.entries(cronJobs)) {
+        for (const [key, value] of Object.entries(regularCronJobs)) {
             value.stop();
             triggerRead(key, 2);
+            let newContinuousJob = cron.schedule("*/1 * * * *", () => {
+                triggerRead(key, 2);
+            });
+            newContinuousJob.start();
+            continuousCronJobs[key] = newContinuousJob;
         }
         console.log("continuous reads on");
     }
     if (continuousRead === false && notFirstInit === true) {
-        for (const [key, value] of Object.entries(cronJobs)) {
-            value.start();
+        for (const [key, value] of Object.entries(continuousCronJobs)) {
+            value.stop();
             triggerRead(key, 1);
+            delete continuousCronJobs[key];
+        }
+        for (const [key, value] of Object.entries(regularCronJobs)) {
+            value.start();
         }
         console.log("continuous reads off");
     }
@@ -75,3 +85,7 @@ async function triggerRead(id, mode) {
     updateObj[id] = mode;
     query.doc('toRead').update(updateObj);
 }
+
+// Keys:
+// 1 for turn off sensors after read
+// 2 for sensors remain on after read
